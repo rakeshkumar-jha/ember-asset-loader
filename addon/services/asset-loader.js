@@ -223,17 +223,16 @@ export default Ember.Service.extend({
    * @return {Bundle} bundle
    */
   _getBundle(name) {
-    const manifest = this.getManifest();
-
-    const bundles = manifest.bundles;
-
+    const { bundles } = this.getManifest();
     Ember.assert('Asset manifest does not list any available bundles.', Object.keys(bundles).length);
 
     const bundle = bundles[name];
 
     Ember.assert(`No bundle with name "${name}" exists in the asset manifest.`, bundle);
-
-    return bundle;
+    // filter only non-css asset, to load these asset on engine loads
+    // and skip the css asset file
+    const nonCSSAssets =  bundle.assets.filter((asset) => asset.type !== 'css');
+    return Object.assign({ ...bundle }, { assets: nonCSSAssets });
   },
 
   /**
@@ -259,6 +258,32 @@ export default Ember.Service.extend({
     this.__assetLoaders = {};
     this.defineLoader('js', JsLoader);
     this.defineLoader('css', CssLoader);
+  },
+
+  /**
+   * On using the ember-cli-rtlcss, css asset will be generated for rtl(Right-To-Left), such as arabic,
+   *
+   * This Method is used to load the engine css asset on demand
+   * if iRTL is true - only rtl css will be loaded, if isRTL is false, normal css file will be loaded on engine load
+   * @param {*} engineName - string
+   * @param {*} isRTL - whether loading the rtl language
+   * @returns
+   */
+  _loadEngineCssAssets(engineName, isRTL) {
+    const { bundles } = this.getManifest();
+    Ember.assert('Asset manifest does not list any available bundles.', Object.keys(bundles).length);
+
+    const bundle = bundles[engineName];
+    Ember.assert(`No bundle with name "${engineName}" exists in the asset manifest.`, bundle);
+    let cssAssets = bundle.assets.filter((asset) => asset.type === 'css');
+    let filterCssAssets = cssAssets.filter(({ uri }) => {
+      // ember-cli-rtlcss, generate the filename with string "rtl.css"
+      let isRTLCss = uri.substring(uri.lastIndexOf('/')).includes('rtl');
+      return isRTL === isRTLCss;
+    });
+    return filterCssAssets.map((cssAsset) => {
+      return this.loadAsset(cssAsset);
+    });
   },
 
   /**
